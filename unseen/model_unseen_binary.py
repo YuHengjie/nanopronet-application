@@ -1,29 +1,17 @@
 # %%
-# %%
 import pickle
 import pandas as pd
 import numpy as np
-import seaborn as sns
-import matplotlib.pyplot as plt
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
-from sklearn.model_selection import train_test_split
 from torch.utils.data import Dataset, DataLoader
-from scipy.stats import boxcox
-from datetime import datetime 
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, confusion_matrix, roc_auc_score
 import random
-from torch.optim.lr_scheduler import ReduceLROnPlateau
-import os
-from datetime import datetime
-from scipy.stats import boxcox
-from scipy.special import inv_boxcox
 
-# 设定设备
+# Setting device
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-# 设置随机数种子
+# Set random seed for reproducibility
 def set_seed(seed=42):
     random.seed(seed)
     np.random.seed(seed)
@@ -33,12 +21,12 @@ def set_seed(seed=42):
 set_seed(42)
 
 # %%
-# 读取第一个文件
+# read the protein embeddings
 with open("protein_embedding/protein_embeddings_all.pkl", "rb") as f:
     pro_embed_dict = pickle.load(f)
     
 # %%
-# 检查第一个条目的数组维度
+# check the shape of the first entry in the dictionary
 first_key = next(iter(pro_embed_dict))  # 获取第一个键
 array_shape = pro_embed_dict[first_key].shape
 print(f"Array shape for {first_key}: {array_shape}")
@@ -53,7 +41,7 @@ unseen_df_all
 
 # %%
 # ================================
-# 构建 Dataset
+# create Dataset class for embedding pairs
 # ================================
 class EmbeddingPairDataset(Dataset):
     def __init__(self, df, x_embed_data_fill, x_embed_data_non_fill, pro_embed_dict):
@@ -88,7 +76,7 @@ class EmbeddingPairDataset(Dataset):
 class CrossAttentionClassifier(nn.Module):
     def __init__(self, x_dim, pro_dim, hidden_dim=1024, dropout=0.3):
         super().__init__()
-        # 特征投影层加入归一化和dropout 
+        # projecting x and pro embeddings to a common space
         self.x_mlp = nn.Sequential(
             nn.Linear(x_dim, hidden_dim),
             nn.BatchNorm1d(hidden_dim),
@@ -102,15 +90,15 @@ class CrossAttentionClassifier(nn.Module):
             nn.Dropout(dropout)
         )
         
-        # 改进的注意力机制 
+        # cross-attention mechanism
         self.attn  = nn.MultiheadAttention(
             embed_dim=hidden_dim,
             num_heads=8,
             batch_first=True,
-            dropout=dropout/2  # 注意力机制内dropout 
+            dropout=dropout/2  # dropout 
         )
         
-        # 分类器增加深度和正则化 
+        # classification head
         self.classifier  = nn.Sequential(
             nn.LayerNorm(hidden_dim),
             nn.Linear(hidden_dim, hidden_dim//4),
@@ -119,10 +107,10 @@ class CrossAttentionClassifier(nn.Module):
             nn.Linear(hidden_dim//4, hidden_dim//16),
             nn.GELU(),
             nn.Dropout(dropout),
-            nn.Linear(hidden_dim//16, 1)  # 二分类使用单输出+sigmoid 
+            nn.Linear(hidden_dim//16, 1)  # binary classification output
         )
  
-        # 初始化参数 
+        # initialize weights
         self._init_weights()
  
     def _init_weights(self):
@@ -133,15 +121,15 @@ class CrossAttentionClassifier(nn.Module):
                     nn.init.constant_(layer.bias,  0.1)
  
     def forward(self, x_embed, pro_embed):
-        # 特征投影 
+        # project embeddings to a common space
         x_feat = self.x_mlp(x_embed)        # [B, 1024]
         pro_feat = self.pro_mlp(pro_embed)   # [B, 1024]
         
-        # 添加序列维度 [B, 1, 1024]
+        # add batch dimension for attention mechanism
         x_feat = x_feat.unsqueeze(1) 
         pro_feat = pro_feat.unsqueeze(1) 
         
-        # 交叉注意力机制 
+        # cross-attention
         attn_out, _ = self.attn( 
             query=x_feat,
             key=pro_feat,
@@ -149,13 +137,13 @@ class CrossAttentionClassifier(nn.Module):
             need_weights=False 
         )
         
-        # 残差连接 
+        # fuse features
         fused_feature = x_feat + attn_out  # [B, 1, 1024]
         fused_feature = fused_feature.squeeze(1)   # [B, 1024]
         
-        # 分类输出 
+        # classification output 
         logits = self.classifier(fused_feature).squeeze(-1)   # [B]
-        return logits  # 配合BCEWithLogitsLoss 
+        return logits  # for binary classification, logits are used directly with BCEWithLogitsLoss
     
 # %%
 def test_model_on_testset(model, test_loader,):

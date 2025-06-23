@@ -3,7 +3,6 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.stats import boxcox
-from scipy.special import inv_boxcox
 from sklearn.preprocessing import PowerTransformer
 from sklearn.preprocessing import QuantileTransformer
 

@@ -1,24 +1,12 @@
 # %%
-# %%
 import pickle
 import pandas as pd
 import numpy as np
-import seaborn as sns
-import matplotlib.pyplot as plt
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
-from sklearn.model_selection import train_test_split
 from torch.utils.data import Dataset, DataLoader
-from scipy.stats import boxcox
-from datetime import datetime 
 from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
 import random
-from torch.optim.lr_scheduler import ReduceLROnPlateau
-import os
-from datetime import datetime
-from scipy.stats import boxcox
-from scipy.special import inv_boxcox
 
 # 设定设备
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
